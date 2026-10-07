@@ -8,7 +8,7 @@ Six end-to-end flows covering the major paths through the system. For each: why 
 
 **Why it matters:** The core user journey. No authentication required. Demonstrates conflict detection, value object validation, domain event dispatch, and the Result pattern all in one request.
 
-**Open first:** [`src/NetCalendy.Application/Bookings/Commands/CreateBooking/CreateBookingHandler.cs`](../../src/NetCalendy.Application/Bookings/Commands/CreateBooking/CreateBookingHandler.cs)
+**Open first:** [`src/NetCalendy.Application/Bookings/Commands/CreateBooking/CreateBookingHandler.cs`](../../../src/NetCalendy.Application/Bookings/Commands/CreateBooking/CreateBookingHandler.cs)
 
 **Trace:**
 
@@ -17,30 +17,30 @@ Six end-to-end flows covering the major paths through the system. For each: why 
 | 1 | HTTP | `BookingsController.cs:19` | `[AllowAnonymous]` — no auth check. Deserializes body to `CreateBookingCommand`. | `{ eventTypeId, hostUserId, startTime, inviteeName, inviteeEmail, inviteeTimezone }` | No rate limiting on this endpoint |
 | 2 | MediatR pipeline | `LoggingBehavior.cs:13` | Logs `"Handling CreateBookingCommand"`, starts stopwatch | — | — |
 | 3 | MediatR pipeline | `ValidationBehavior.cs:14` | Runs `CreateBookingValidator`: email format, future startTime, non-empty name/tz | Throws `ValidationException` if invalid → caught by `ExceptionHandlingMiddleware` | startTime check uses `DateTimeOffset.UtcNow` at validation time, not at create time |
-| 4 | Handler | `CreateBookingHandler.cs:23` | Loads `EventType` by ID from `IEventTypeRepository` | `EventType?` — null means 404 | No tenant scoping on this load — cross-tenant booking possible (see risk register) |
+| 4 | Handler | `CreateBookingHandler.cs:24` | Loads `EventType` by ID from `IEventTypeRepository` | `EventType?` — null means 404 | No tenant scoping on this load — cross-tenant booking possible (see risk register) |
 | 5 | Handler | `CreateBookingHandler.cs:26` | Checks `eventType.IsActive` | bool | — |
 | 6 | Handler | `CreateBookingHandler.cs:30` | Calls `bookings.GetConflictingBookingsAsync(hostId, start, end)` | `IReadOnlyList<Booking>` — checks `Status != Cancelled && StartTime < end && EndTime > start` | Does not lock rows; race condition possible under concurrent requests |
-| 7 | Handler | `CreateBookingHandler.cs:35` | Calls `Invitee.Create(name, email, tz, notes)` | `Result<Invitee>` | Email validated again here (already done by FluentValidation — minor duplication) |
-| 8 | Handler | `CreateBookingHandler.cs:40` | Calls `Booking.Create(...)` | `Result<Booking>` — raises `BookingCreatedEvent`, generates `CancellationToken` | |
-| 9 | Handler | `CreateBookingHandler.cs:43` | `bookings.Add(booking)` — EF change tracker registers the entity | In-memory only | |
-| 10 | Handler | `CreateBookingHandler.cs:44` | `uow.SaveChangesAsync()` → `AppDbContext.SaveChangesAsync` | SQL INSERT | Domain events dispatched **after** save succeeds |
+| 7 | Handler | `CreateBookingHandler.cs:34` | Calls `Invitee.Create(name, email, tz, notes)` | `Result<Invitee>` | Email validated again here (already done by FluentValidation — minor duplication) |
+| 8 | Handler | `CreateBookingHandler.cs:37` | Calls `Booking.Create(...)` | `Result<Booking>` — raises `BookingCreatedEvent`, generates `CancellationToken` | |
+| 9 | Handler | `CreateBookingHandler.cs:40` | `bookings.Add(booking)` — EF change tracker registers the entity | In-memory only | |
+| 10 | Handler | `CreateBookingHandler.cs:41` | `uow.SaveChangesAsync()` → `AppDbContext.SaveChangesAsync` | SQL INSERT | Domain events dispatched **after** save succeeds |
 | 11 | DbContext | `AppDbContext.cs:31` | Collects domain events, clears them, calls `publisher.Publish` for each | `INotification` via MediatR | No handler for `BookingCreatedEvent` exists yet — events fire but do nothing |
 | 12 | Handler | returns | `Result.Success(new CreateBookingResponse(...))` | Response DTO | |
 | 13 | Controller | `ResultExtensions.cs:9` | `result.ToCreatedResult(...)` → HTTP 201 | JSON body + Location header | |
 
 **Validation & authorization:**
-- FluentValidation: [`CreateBookingValidator.cs`](../../src/NetCalendy.Application/Bookings/Commands/CreateBooking/CreateBookingValidator.cs)
-- Domain invariant: [`Booking.cs:44-47`](../../src/NetCalendy.Domain/Bookings/Booking.cs#L44)
+- FluentValidation: [`CreateBookingValidator.cs`](../../../src/NetCalendy.Application/Bookings/Commands/CreateBooking/CreateBookingValidator.cs)
+- Domain invariant: [`Booking.cs:44-47`](../../../src/NetCalendy.Domain/Bookings/Booking.cs#L44)
 - No auth required (public endpoint)
 
 **Persistence & side effects:**
-- [`BookingConfiguration.cs`](../../src/NetCalendy.Infrastructure/Persistence/Configurations/BookingConfiguration.cs) — column mapping, `cancellation_token` unique index
+- [`BookingConfiguration.cs`](../../../src/NetCalendy.Infrastructure/Persistence/Configurations/BookingConfiguration.cs) — column mapping, `cancellation_token` unique index
 - Domain event: `BookingCreatedEvent` dispatched post-save (no handler yet)
 
 **Tests:**
-- [`tests/NetCalendy.Domain.Tests/BookingTests/BookingAggregateTests.cs`](../../tests/NetCalendy.Domain.Tests/BookingTests/BookingAggregateTests.cs) — domain invariants
-- [`tests/NetCalendy.Application.Tests/Bookings/CreateBookingHandlerTests.cs`](../../tests/NetCalendy.Application.Tests/Bookings/CreateBookingHandlerTests.cs) — handler unit tests with mocks
-- [`tests/NetCalendy.Integration.Tests/BookingsEndpoints/CreateBookingEndpointTests.cs`](../../tests/NetCalendy.Integration.Tests/BookingsEndpoints/CreateBookingEndpointTests.cs) — full HTTP tests
+- [`tests/NetCalendy.Domain.Tests/BookingTests/BookingAggregateTests.cs`](../../../tests/NetCalendy.Domain.Tests/BookingTests/BookingAggregateTests.cs) — domain invariants
+- [`tests/NetCalendy.Application.Tests/Bookings/CreateBookingHandlerTests.cs`](../../../tests/NetCalendy.Application.Tests/Bookings/CreateBookingHandlerTests.cs) — handler unit tests with mocks
+- [`tests/NetCalendy.Integration.Tests/BookingsEndpoints/CreateBookingEndpointTests.cs`](../../../tests/NetCalendy.Integration.Tests/BookingsEndpoints/CreateBookingEndpointTests.cs) — full HTTP tests
 
 **Juniors miss:** That step 10 dispatches domain events after the database write — the events can only fail silently if `publisher.Publish` throws and there's no handler.
 
@@ -56,31 +56,31 @@ Six end-to-end flows covering the major paths through the system. For each: why 
 
 **Why it matters:** The most complex query. Pure read path. Requires understanding schedule rules, timezone conversion, and conflict filtering.
 
-**Open first:** [`src/NetCalendy.Application/Schedules/Queries/GetAvailableSlots/GetAvailableSlotsHandler.cs`](../../src/NetCalendy.Application/Schedules/Queries/GetAvailableSlots/GetAvailableSlotsHandler.cs)
+**Open first:** [`src/NetCalendy.Application/Schedules/Queries/GetAvailableSlots/GetAvailableSlotsHandler.cs`](../../../src/NetCalendy.Application/Schedules/Queries/GetAvailableSlots/GetAvailableSlotsHandler.cs)
 
 **Trace:**
 
 | Step | Owner | File | What happens | Data shape | Risk |
 |---|---|---|---|---|---|
 | 1 | HTTP | `SchedulesController.cs:22` | `[AllowAnonymous]`. Validates `endDate >= startDate` and range ≤ 60 days in the controller. | Query params | Max-range guard is only in the controller, not the handler |
-| 2 | Handler | `GetAvailableSlotsHandler.cs:20` | Loads `EventType` — if null, return empty list | `EventType?` | No tenant scope check |
-| 3 | Handler | `GetAvailableSlotsHandler.cs:24` | Loads default `Schedule` for host user (oldest by `CreatedAt`) | `Schedule?` — if null, return empty `[]` | Only loads the first schedule; multiple schedules per user not yet surfaced |
-| 4 | Handler | `GetAvailableSlotsHandler.cs:29` | Parses timezone string into `TimeZoneInfo` | Throws `InvalidTimeZoneException` if bad — caught and returns `Error.Validation` | IANA vs Windows timezone names differ on Linux vs Windows (investigate) |
-| 5 | Handler | `GetAvailableSlotsHandler.cs:38` | Loads all non-cancelled bookings for host in the date range | `IReadOnlyList<Booking>` | Loads entire list into memory — no pagination |
-| 6 | Handler | `GetAvailableSlotsHandler.cs:42-55` | For each date in range: `schedule.GetAvailableSlots(date, duration)` → walk in `durationMinutes` increments, filter past, filter conflicts | `List<AvailableSlotDto>` | O(dates × slots × bookings) — slow for large ranges/many bookings |
+| 2 | Handler | `GetAvailableSlotsHandler.cs:23-24` | Loads `EventType` — if null, returns `Error.NotFound` (404) | `EventType?` | No tenant scope check |
+| 3 | Handler | `GetAvailableSlotsHandler.cs:26-27` | Loads default `Schedule` for host user (oldest by `CreatedAt`) | `Schedule?` — if null, return empty `[]` | Only loads the first schedule; multiple schedules per user not yet surfaced |
+| 4 | Handler | `GetAvailableSlotsHandler.cs:29-31` | Parses timezone string into `TimeZoneInfo` | Throws `InvalidTimeZoneException` if bad — caught and returns `Error.Validation` | IANA vs Windows timezone names differ on Linux vs Windows (investigate) |
+| 5 | Handler | `GetAvailableSlotsHandler.cs:36` | Loads all non-cancelled bookings for host in the date range | `IReadOnlyList<Booking>` | Loads entire list into memory — no pagination |
+| 6 | Handler | `GetAvailableSlotsHandler.cs:39-53` | For each date in range: `schedule.GetAvailableSlots(date, duration)` → walk in `durationMinutes` increments, filter past, filter conflicts | `List<AvailableSlotDto>` | O(dates × slots × bookings) — slow for large ranges/many bookings |
 | 7 | Handler | returns | `Result.Success(slots)` | JSON array of `{startUtc, endUtc, displayTime}` | |
 
-**Validation & authorization:** Controller-level range guard at [`SchedulesController.cs:27-29`](../../src/NetCalendy.Api/Controllers/SchedulesController.cs#L27). No auth required.
+**Validation & authorization:** Controller-level range guard at [`SchedulesController.cs:27-29`](../../../src/NetCalendy.Api/Controllers/SchedulesController.cs#L27). No auth required.
 
-**Persistence:** [`ScheduleRepository.cs:12`](../../src/NetCalendy.Infrastructure/Persistence/Repositories/ScheduleRepository.cs#L12) — uses `Include("_rules")` string-based include to load the `AvailabilityRule` owned collection.
+**Persistence:** [`ScheduleRepository.cs:12`](../../../src/NetCalendy.Infrastructure/Persistence/Repositories/ScheduleRepository.cs#L12) — uses `Include("_rules")` string-based include to load the `AvailabilityRule` owned collection.
 
-**Tests:** No direct unit test for `GetAvailableSlotsHandler`. [`ScheduleAggregateTests.cs`](../../tests/NetCalendy.Domain.Tests/ScheduleTests/ScheduleAggregateTests.cs) covers `GetAvailableSlots` at the domain level.
+**Tests:** No direct unit test for `GetAvailableSlotsHandler`. [`ScheduleAggregateTests.cs`](../../../tests/NetCalendy.Domain.Tests/ScheduleTests/ScheduleAggregateTests.cs) covers `GetAvailableSlots` at the domain level.
 
 **Juniors miss:** Step 3 silently returns empty if the user has no schedule — there's no error, just no slots.
 
 **Seniors notice:** Step 4 — `TimeZoneInfo.FindSystemTimeZoneById` uses different ID formats on Windows (`"Eastern Standard Time"`) vs Linux (`"America/New_York"`). The app uses IANA IDs in the code but this needs `RuntimeInformation.IsOSPlatform` handling or the `TimeZoneConverter` NuGet package. **Investigate before deploying to Linux.**
 
-🔧 **Drill:** What does `GetAvailableSlots` return if the user's schedule has no rule for Monday and `startDate` is a Monday? Trace through [`Schedule.cs:53`](../../src/NetCalendy.Domain/Schedules/Schedule.cs#L53).
+🔧 **Drill:** What does `GetAvailableSlots` return if the user's schedule has no rule for Monday and `startDate` is a Monday? Trace through [`Schedule.cs:53`](../../../src/NetCalendy.Domain/Schedules/Schedule.cs#L53).
 
 ---
 
@@ -88,7 +88,7 @@ Six end-to-end flows covering the major paths through the system. For each: why 
 
 **Why it matters:** Demonstrates the full authentication path: JWT → tenant claim → user claim → handler authorization.
 
-**Open first:** [`src/NetCalendy.Application/EventTypes/Commands/CreateEventType/CreateEventTypeHandler.cs`](../../src/NetCalendy.Application/EventTypes/Commands/CreateEventType/CreateEventTypeHandler.cs)
+**Open first:** [`src/NetCalendy.Application/EventTypes/Commands/CreateEventType/CreateEventTypeHandler.cs`](../../../src/NetCalendy.Application/EventTypes/Commands/CreateEventType/CreateEventTypeHandler.cs)
 
 **Trace:**
 
@@ -101,9 +101,9 @@ Six end-to-end flows covering the major paths through the system. For each: why 
 | 5 | Handler | `CreateEventTypeHandler.cs:23` | `EventType.Create(tenantId, userId, name, slug, duration, description, color)` | `Result<EventType>` | |
 | 6 | Handler | `CreateEventTypeHandler.cs:26` | `eventTypes.Add(et)` + `uow.SaveChangesAsync()` | SQL INSERT | |
 
-**Validation & authorization:** [`CreateEventTypeValidator.cs`](../../src/NetCalendy.Application/EventTypes/Commands/CreateEventType/CreateEventTypeValidator.cs) — slug regex, color hex format, duration range.
+**Validation & authorization:** [`CreateEventTypeValidator.cs`](../../../src/NetCalendy.Application/EventTypes/Commands/CreateEventType/CreateEventTypeValidator.cs) — slug regex, color hex format, duration range.
 
-**Tests:** [`tests/NetCalendy.Application.Tests/EventTypes/CreateEventTypeHandlerTests.cs`](../../tests/NetCalendy.Application.Tests/EventTypes/CreateEventTypeHandlerTests.cs) — slug conflict, successful create. [`tests/NetCalendy.Integration.Tests/EventTypesEndpoints/EventTypesEndpointTests.cs`](../../tests/NetCalendy.Integration.Tests/EventTypesEndpoints/EventTypesEndpointTests.cs) — 401 when unauthenticated, 201 when authenticated.
+**Tests:** [`tests/NetCalendy.Application.Tests/EventTypes/CreateEventTypeHandlerTests.cs`](../../../tests/NetCalendy.Application.Tests/EventTypes/CreateEventTypeHandlerTests.cs) — slug conflict, successful create. [`tests/NetCalendy.Integration.Tests/EventTypesEndpoints/EventTypesEndpointTests.cs`](../../../tests/NetCalendy.Integration.Tests/EventTypesEndpoints/EventTypesEndpointTests.cs) — 401 when unauthenticated, 201 when authenticated.
 
 **Juniors miss:** The difference between `TenantResolutionMiddleware` (reads from header/subdomain, stores in Items) and `CurrentTenantService` (reads from JWT claim). They solve different parts of the tenant resolution problem.
 
@@ -115,7 +115,7 @@ Six end-to-end flows covering the major paths through the system. For each: why 
 
 **Why it matters:** Shows the cancellation token pattern, idempotency, and domain aggregate state machine.
 
-**Open first:** [`src/NetCalendy.Domain/Bookings/Booking.cs:56`](../../src/NetCalendy.Domain/Bookings/Booking.cs#L56)
+**Open first:** [`src/NetCalendy.Domain/Bookings/Booking.cs:56`](../../../src/NetCalendy.Domain/Bookings/Booking.cs#L56)
 
 **Trace:**
 
@@ -136,7 +136,7 @@ Six end-to-end flows covering the major paths through the system. For each: why 
 
 **Why it matters:** Understanding how the integration tests work teaches you WebApplicationFactory, dependency injection override, and Testcontainers. This is the pattern you'll replicate for every new integration test.
 
-**Open first:** [`tests/NetCalendy.Integration.Tests/Fixtures/IntegrationTestWebAppFactory.cs`](../../tests/NetCalendy.Integration.Tests/Fixtures/IntegrationTestWebAppFactory.cs)
+**Open first:** [`tests/NetCalendy.Integration.Tests/Fixtures/IntegrationTestWebAppFactory.cs`](../../../tests/NetCalendy.Integration.Tests/Fixtures/IntegrationTestWebAppFactory.cs)
 
 **Trace:**
 
@@ -159,7 +159,7 @@ Six end-to-end flows covering the major paths through the system. For each: why 
 
 **Why it matters:** Shows React Query data fetching, multi-step component state, and how the frontend talks to the API.
 
-**Open first:** [`web/src/components/booking/BookingPage.tsx`](../../web/src/components/booking/BookingPage.tsx)
+**Open first:** [`web/src/components/booking/BookingPage.tsx`](../../../web/src/components/booking/BookingPage.tsx)
 
 **Trace:**
 
